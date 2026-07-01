@@ -4,11 +4,24 @@ import 'package:logger/logger.dart' as log;
 /// Centralized application logger.
 class AppLogger {
   factory AppLogger() => _instance;
-  AppLogger._();
+  AppLogger._() {
+    _logger = log.Logger(
+      level: log.Level.info,
+      printer: log.PrettyPrinter(
+        methodCount: 2,
+        errorMethodCount: 8,
+        lineLength: 120,
+        colors: true,
+        printEmojis: true,
+        dateTimeFormat: log.DateTimeFormat.dateAndTime,
+      ),
+      filter: DebugFilter(),
+    );
+  }
 
   static final AppLogger _instance = AppLogger._();
 
-  late final log.Logger _logger;
+  late log.Logger _logger;
 
   void init({bool debugMode = false}) {
     _logger = log.Logger(
