@@ -1,0 +1,33 @@
+# Flutter
+.dart_tool/
+.packages
+build/
+*.iml
+.idea/
+.vscode/
+*.g.dart
+*.freezed.dart
+
+# Android
+android/app/build/
+android/.gradle/
+android/local.properties
+*.apk
+*.aab
+*.keystore
+
+# iOS
+ios/Pods/
+ios/.symlinks/
+*.ipa
+
+# Windows
+windows/build/
+windows/flutter/ephemeral/
+windows/.vs/
+
+# Misc
+*.log
+*.swp
+.DS_Store
+Thumbs.db

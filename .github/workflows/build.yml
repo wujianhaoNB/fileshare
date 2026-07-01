@@ -1,0 +1,47 @@
+name: Build APK & IPA
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  # Android APK — builds on Ubuntu
+  build-android:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.32.3'
+          channel: 'stable'
+      - run: flutter pub get
+      - run: flutter build apk --release
+      - uses: actions/upload-artifact@v4
+        with:
+          name: fileshare-android
+          path: build/app/outputs/flutter-apk/app-release.apk
+
+  # iOS IPA — builds on macOS
+  build-ios:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.32.3'
+          channel: 'stable'
+      - run: flutter pub get
+      - run: |
+          cd ios
+          pod update
+          cd ..
+      - run: flutter build ios --release --no-codesign
+      - run: |
+          mkdir -p Payload
+          cp -r build/ios/Release-iphoneos/Runner.app Payload/
+          zip -r fileshare.ipa Payload/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: fileshare-ios
+          path: fileshare.ipa
