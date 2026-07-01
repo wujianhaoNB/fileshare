@@ -7,15 +7,23 @@ import 'services/file_manager.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // MUST init logger first — other services depend on it
-  AppLogger().init(debugMode: true);
+  // Global error handler — prevent gray screen on any crash
+  FlutterError.onError = (FlutterErrorDetails details) {
+    FlutterError.presentError(details);
+    AppLogger().error('Flutter error: ${details.exception}', details.exception);
+  };
 
-  // Initialize file manager before the app starts
-  final fileManager = FileManager();
-  await fileManager.init();
+  // Catch any startup error
+  try {
+    AppLogger().init(debugMode: false);
 
-  // Clean up old temp files
-  await fileManager.cleanupTempFiles();
+    final fileManager = FileManager();
+    await fileManager.init();
+    await fileManager.cleanupTempFiles();
+  } catch (e) {
+    // If startup fails, still launch the app — it'll show error state
+    AppLogger().error('Startup error: $e', e);
+  }
 
   runApp(
     const ProviderScope(

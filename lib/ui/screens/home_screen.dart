@@ -18,22 +18,19 @@ class HomeScreen extends ConsumerStatefulWidget {
 }
 
 class _HomeScreenState extends ConsumerState<HomeScreen> {
-  @override
-  void initState() {
-    super.initState();
-    // Start discovery on first load
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _startDiscovery();
-    });
-  }
+  bool _started = false;
 
   Future<void> _startDiscovery() async {
-    final discoveryService = ref.read(discoveryServiceProvider);
-    final deviceName = ref.read(deviceNameProvider);
-    final controlPort = ref.read(controlPortProvider);
-    final hasBluetooth = ref.read(bluetoothEnabledProvider);
+    if (_started) return;
+    _started = true;
 
+    ref.read(isSearchingProvider.notifier).state = true;
     try {
+      final discoveryService = ref.read(discoveryServiceProvider);
+      final deviceName = ref.read(deviceNameProvider);
+      final controlPort = ref.read(controlPortProvider);
+      final hasBluetooth = ref.read(bluetoothEnabledProvider);
+
       await discoveryService.start(
         deviceName: deviceName,
         port: controlPort,
@@ -41,11 +38,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       );
       ref.read(isServerRunningProvider.notifier).state = true;
     } catch (e) {
+      _started = false;
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('启动发现失败: $e')),
+          SnackBar(content: Text('启动失败: $e')),
         );
       }
+    } finally {
+      ref.read(isSearchingProvider.notifier).state = false;
     }
   }
 
