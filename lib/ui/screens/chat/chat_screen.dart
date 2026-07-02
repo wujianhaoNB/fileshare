@@ -82,22 +82,26 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with TickerProviderStat
         }
       }
 
-      // STEP 2: Build context with tool results injected
-      var context = '';
-      for (final r in toolResults) {
-        context += '\n[工具执行结果: ${jsonEncode(r)}]';
-      }
-
+      // STEP 2: Build context — add recent history first, then current tool results
       final messages = <Map<String, dynamic>>[
-        {'role': 'system', 'content': AiConstants.defaultSystemPrompt + '\n\n## 刚才执行的工具结果\n$context\n\n请根据以上真实数据用中文回复用户。直接给出结论，不要再说"让我看看/我来扫描"之类的话。'},
+        {'role': 'system', 'content': AiConstants.defaultSystemPrompt},
       ];
 
-      // Add recent history
-      final history = await convService.getMessages(convId, limit: 10);
+      // Add conversation history (last 20 messages for context)
+      final history = await convService.getMessages(convId, limit: 20);
       for (final msg in history) {
-        if (msg.role != 'system') {
-          messages.add(msg.toApiFormat());
+        messages.add(msg.toApiFormat());
+      }
+
+      // Remove the last user message (it's the current one, already in history)
+      // and inject tool results before it so LLM sees results first
+      if (toolResults.isNotEmpty && messages.length >= 2) {
+        final toolMsg = '[系统: 已自动执行以下操作 — ${toolResults.map((r) => "${r["tool"]}: ${r["success"] == true ? "成功" : "失败"}。${r["message"] ?? ""}").join(" | ")}]';
+        // Remove last user+assistant if they exist (will be regenerated)
+        if (messages.last['role'] == 'user') {
+          messages.removeLast();
         }
+        messages.add({'role': 'user', 'content': '$text\n\n$toolMsg'});
       }
 
       // STEP 3: LLM generates natural response based on real data

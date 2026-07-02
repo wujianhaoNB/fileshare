@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import '../../../providers/ai_providers.dart';
 import '../../../providers/settings_providers.dart';
 import '../../../providers/service_providers.dart';
+import 'personal_dashboard.dart';
 
 class DashboardScreen extends ConsumerWidget {
   const DashboardScreen({super.key});
@@ -60,7 +61,12 @@ class DashboardScreen extends ConsumerWidget {
               ],
             ),
           ),
-          const SizedBox(height: 24),
+          const SizedBox(height: 20),
+
+          // Personal ability dashboard
+          const PersonalDashboard(),
+
+          const SizedBox(height: 8),
 
           // Quick actions
           Text('快捷操作', style: theme.textTheme.titleSmall?.copyWith(color: const Color(0xFF7C5CFC), fontWeight: FontWeight.w600)),
