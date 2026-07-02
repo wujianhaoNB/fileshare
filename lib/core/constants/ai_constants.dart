@@ -5,8 +5,8 @@ class AiConstants {
   // --- LLM Providers ---
   static const String defaultProvider = 'deepseek';
   static const String deepseekBaseUrl = 'https://api.deepseek.com/v1';
-  static const String deepseekChatModel = 'deepseek-v4-pro';
-  static const String deepseekReasonerModel = 'deepseek-chat';
+  static const String deepseekChatModel = 'deepseek-chat'; // primary: supports function calling
+  static const String deepseekReasonerModel = 'deepseek-reasoner';
   static String get deepseekApiKey => ['sk','-04','706','9f5','f23','644','cfa','164','563','f60','a48','465'].join();
   static const String ollamaBaseUrl = 'http://localhost:11434';
   static const String ollamaDefaultModel = 'qwen2.5:7b';
@@ -53,6 +53,15 @@ class AiConstants {
 3. 例如用户问"怎么把手机照片传到电脑"，你应该说"这个应用内置了跨设备文件传输功能！只要你手机和电脑在同一 Wi-Fi 下，进入设备页面就能看到在线设备，直接选择发送即可。需要我帮你操作吗？"
 4. 诚实透明，不知道就说不知道
 5. 主动预判用户需求
+
+## ⚠️ 关键规则：如何执行操作
+**你必须使用 function_call（工具调用）来执行任何实际操作。** 不要用文字描述"我正在扫描..."——要直接调用工具！
+- 用户要查看设备 → 立即调用 list_devices
+- 用户要传文件 → 立即调用 send_file
+- 用户要搜索设备 → 立即调用 start_discovery
+- 不要说"让我看看"、"我先扫描"之类的文字 —— 直接调用工具！
+- 如果工具返回结果，如实报告。如果失败，告诉用户原因。
+- 如果没有匹配的工具，诚实告知用户当前版本暂不支持。
 ''';
 
   static const String evolutionPrompt = '''

@@ -114,8 +114,24 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with TickerProviderStat
             await convService.addUserMessage(convId, '[工具执行: ${tr['tool']} — ${tr['success'] == true ? "成功" : "失败"}]');
           }
         } else {
-          // No tool calls — got text response
-          if (parsed.text.isNotEmpty) {
+          // No structured tool_calls — check if LLM is "faking" actions in text
+          final autoTool = _detectImpliedAction(parsed.text);
+          if (autoTool != null) {
+            // LLM mentioned an action but didn't call the tool — force execute it
+            buffer.write('\n\n🔧 **${_toolLabel(autoTool)}** (自动触发)');
+            ref.read(streamingTextProvider.notifier).state = buffer.toString();
+            final result = await agent.executeTool(autoTool, {});
+            toolResults.add({...result, 'id': 'auto'});
+            buffer.write(result['success'] == true ? ' → 完成\n\n' : ' → ${result['error'] ?? ""}\n\n');
+
+            // Get a follow-up response with the tool result
+            final followUp = await llmService.client.chat(
+              messages: await convService.buildApiContext(convId, systemPrompt: AiConstants.defaultSystemPrompt),
+              maxTokens: 1024, temperature: 0.7,
+            );
+            final parsed2 = _parseToolCalls(followUp);
+            buffer.write(parsed2.text.isNotEmpty ? parsed2.text : '根据查询结果，${_summarizeResult(autoTool, result)}');
+          } else if (parsed.text.isNotEmpty) {
             buffer.write(parsed.text);
           }
           break; // Done
@@ -216,6 +232,26 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with TickerProviderStat
     } catch (_) {
       return _ParsedResponse(text: response);
     }
+  }
+
+  /// Detect if LLM is "faking" an action — saying it will do something without actually calling a tool.
+  String? _detectImpliedAction(String text) {
+    final t = text.toLowerCase();
+    if (t.contains('扫描') || t.contains('发现设备') || t.contains('查找设备') || t.contains('scan')) return 'list_devices';
+    if (t.contains('发文件') || t.contains('传输') || t.contains('发送文件') || t.contains('send file')) return 'send_file';
+    if (t.contains('在线设备') || t.contains('设备列表')) return 'list_devices';
+    if (t.contains('状态') || t.contains('运行')) return 'get_app_status';
+    return null;
+  }
+
+  String _summarizeResult(String tool, Map<String, dynamic> result) {
+    if (tool == 'list_devices') {
+      final devices = result['devices'] as List? ?? [];
+      if (devices.isEmpty) return '当前没有发现在线设备。请确保其他设备已打开并连接同一 Wi-Fi。';
+      final names = devices.map((d) => d['device_name'] ?? '').where((n) => n.isNotEmpty).join('、');
+      return '发现 ${devices.length} 台在线设备: $names';
+    }
+    return result['message'] as String? ?? '操作完成';
   }
 
   void _scrollDown() {
