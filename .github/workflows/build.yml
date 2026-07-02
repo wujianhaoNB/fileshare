@@ -25,7 +25,7 @@ jobs:
           name: fileshare-android
           path: build/app/outputs/flutter-apk/app-release.apk
 
-  # iOS IPA
+  # iOS IPA (unsigned — for sideload testing only)
   build-ios:
     runs-on: macos-latest
     steps:
@@ -34,8 +34,14 @@ jobs:
         with:
           channel: 'stable'
       - run: flutter pub get
-      - run: flutter build ios --release --no-codesign
-      - run: |
+      - name: Install CocoaPods dependencies
+        run: |
+          cd ios
+          pod install --repo-update
+      - name: Build iOS (unsigned)
+        run: flutter build ios --release --no-codesign
+      - name: Package IPA
+        run: |
           mkdir -p Payload
           cp -r build/ios/Release-iphoneos/Runner.app Payload/
           zip -r fileshare.ipa Payload/
