@@ -1,5 +1,6 @@
 import 'dart:async';
 import '../../core/logger/app_logger.dart';
+import '../../core/utils/network_utils.dart';
 import '../../data/models/device.dart';
 import 'mdns_discovery.dart';
 import 'subnet_scanner.dart';
@@ -21,6 +22,8 @@ class CompositeDiscovery {
   /// All currently known devices.
   List<Device> get knownDevices => _knownDevices.values.toList();
 
+  String? _ownIp;
+
   /// Start discovery (mDNS + subnet scan).
   Future<void> start({
     required String deviceName,
@@ -33,6 +36,9 @@ class CompositeDiscovery {
 
     _logger.info('Starting composite discovery');
 
+    // Get own IP for filtering
+    _ownIp = await NetworkUtils.getLocalIp();
+
     // Listen to both discovery sources
     _mdns.discoveredDevices.listen(_onDeviceFound);
     _subnetScanner.discoveredDevices.listen(_onDeviceFound);
@@ -42,23 +48,35 @@ class CompositeDiscovery {
     await _mdns.start();
 
     // Run subnet scan in parallel
-    _subnetScanner.scan(knownIps: knownIps);
+    _subnetScanner.scan(knownIps: knownIps, ownIp: _ownIp);
   }
 
   /// Refresh discovery.
   Future<void> refresh({List<String>? knownIps}) async {
     _knownDevices.clear();
     await _mdns.refresh();
-    unawaited(_subnetScanner.scan(knownIps: knownIps));
+    unawaited(_subnetScanner.scan(knownIps: knownIps, ownIp: _ownIp));
   }
 
   void _onDeviceFound(Device device) {
-    final key = device.id;
-    if (_knownDevices.containsKey(key)) {
-      // Update last seen
-      _knownDevices[key] = device.copyWith(lastSeenAt: DateTime.now());
+    // Deduplicate by IP (different discovery methods may assign different IDs)
+    final ipKey = '${device.ip}:${device.port}';
+    // Filter out own device
+    if (device.ip == _ownIp) {
+      _logger.debug('Skipping own device: ${device.ip}');
+      return;
+    }
+
+    if (_knownDevices.containsKey(ipKey)) {
+      // Update last seen, preserve pairing info
+      final existing = _knownDevices[ipKey]!;
+      _knownDevices[ipKey] = device.copyWith(
+        lastSeenAt: DateTime.now(),
+        trustLevel: existing.trustLevel > 0 ? existing.trustLevel : device.trustLevel,
+        displayName: existing.trustLevel > 0 ? existing.displayName : device.displayName,
+      );
     } else {
-      _knownDevices[key] = device;
+      _knownDevices[ipKey] = device;
     }
     _deviceController.add(device);
     _logger.debug('Device updated: ${device.displayName} (${device.ip})');

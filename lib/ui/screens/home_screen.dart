@@ -24,10 +24,22 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     _started = true;
     ref.read(isSearchingProvider.notifier).state = true;
     try {
-      final discoveryService = ref.read(discoveryServiceProvider);
+      // Initialize file manager first
+      final fileManager = ref.read(fileManagerProvider);
+      await fileManager.init();
+
+      // Start servers (HTTP control + TCP data)
+      final serverManager = ref.read(serverManagerProvider);
       final deviceName = ref.read(deviceNameProvider);
-      final controlPort = ref.read(controlPortProvider);
       final hasBluetooth = ref.read(bluetoothEnabledProvider);
+      await serverManager.start(
+        deviceName: deviceName,
+        hasBluetooth: hasBluetooth,
+      );
+
+      // Start device discovery
+      final discoveryService = ref.read(discoveryServiceProvider);
+      final controlPort = ref.read(controlPortProvider);
       await discoveryService.start(
         deviceName: deviceName,
         port: controlPort,

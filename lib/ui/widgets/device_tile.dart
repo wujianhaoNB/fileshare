@@ -24,33 +24,35 @@ class DeviceListTile extends StatelessWidget {
       child: ListTile(
         onTap: onTap,
         leading: _buildAvatar(colorScheme),
-        title: Row(
+        title: Text(
+          device.displayName,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: Theme.of(context).textTheme.bodyLarge,
+        ),
+        subtitle: Row(
           children: [
             Flexible(
               child: Text(
-                device.displayName,
+                device.isOnline
+                    ? '${device.ip}:${device.port}  在线'
+                    : device.lastSeenAt != null
+                        ? '最后在线 ${device.lastSeenAt!.relativeTime}'
+                        : '离线',
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: Theme.of(context).textTheme.bodyLarge,
+                style: Theme.of(context).textTheme.bodySmall,
               ),
             ),
             if (device.isPaired) ...[
-              const SizedBox(width: 8),
+              const SizedBox(width: 6),
               Icon(
                 device.isVerified ? Icons.verified : Icons.lock,
-                size: 16,
+                size: 14,
                 color: device.isVerified ? Colors.blue : Colors.green,
               ),
             ],
           ],
-        ),
-        subtitle: Text(
-          device.isOnline
-              ? '${device.ip}:${device.port} • 在线'
-              : device.lastSeenAt != null
-                  ? '最后在线 ${device.lastSeenAt!.relativeTime}'
-                  : '离线',
-          style: Theme.of(context).textTheme.bodySmall,
         ),
         trailing: device.isOnline
             ? FilledButton.tonal(

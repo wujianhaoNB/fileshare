@@ -7,12 +7,22 @@ import '../core/logger/app_logger.dart';
 class FileManager {
   final AppLogger _logger = AppLogger();
 
-  late final String _tempDir;
-  late final String _incomingDir;
   bool _initialized = false;
+  String? _tempDir;
+  String? _incomingDir;
 
-  String get tempDir => _tempDir;
-  String get incomingDir => _incomingDir;
+  /// Returns the temp directory, initializing on-demand if needed.
+  String get tempDir {
+    if (_tempDir != null) return _tempDir!;
+    // Use a fallback until init() is called
+    return p.join(Directory.systemTemp.path, 'fileshare', 'temp');
+  }
+
+  /// Returns the incoming directory, initializing on-demand if needed.
+  String get incomingDir {
+    if (_incomingDir != null) return _incomingDir!;
+    return p.join(Directory.systemTemp.path, 'fileshare', 'incoming');
+  }
 
   /// Initialize directory structure.
   Future<void> init() async {
@@ -24,8 +34,8 @@ class FileManager {
     _tempDir = p.join(baseDir.path, 'temp');
     _incomingDir = p.join(baseDir.path, 'incoming');
 
-    await Directory(_tempDir).create(recursive: true);
-    await Directory(_incomingDir).create(recursive: true);
+    await Directory(tempDir).create(recursive: true);
+    await Directory(incomingDir).create(recursive: true);
 
     _initialized = true;
     _logger.info('File manager initialized: temp=$_tempDir, incoming=$_incomingDir');
@@ -33,12 +43,12 @@ class FileManager {
 
   /// Get the path for a temporary (partial) download file.
   String getTempPath(String transferId, String fileName) {
-    return p.join(_tempDir, '${transferId}_$fileName.part');
+    return p.join(tempDir, '${transferId}_$fileName.part');
   }
 
   /// Get the final path for a completed download.
   String getIncomingPath(String fileName) {
-    return p.join(_incomingDir, fileName);
+    return p.join(incomingDir, fileName);
   }
 
   /// Move a completed temp file to the incoming directory.
@@ -52,7 +62,7 @@ class FileManager {
     while (await File(finalPath).exists()) {
       final ext = p.extension(fileName);
       final base = p.basenameWithoutExtension(fileName);
-      finalPath = p.join(_incomingDir, '${base}_$counter$ext');
+      finalPath = p.join(incomingDir, '${base}_$counter$ext');
       counter++;
     }
 
@@ -70,10 +80,9 @@ class FileManager {
         final result = await Process.run(
           Platform.isWindows ? 'wmic' : 'df',
           Platform.isWindows
-              ? ['logicaldisk', 'where', 'name=', '${_incomingDir[0]}:', 'get', 'freespace']
-              : ['-B', _incomingDir],
+              ? ['logicaldisk', 'where', 'name=', '${incomingDir[0]}:', 'get', 'freespace']
+              : ['-B', incomingDir],
         );
-        // Simple: just estimate
         return 1024 * 1024 * 1024; // Assume 1 GB available
       }
       return 1024 * 1024 * 1024; // Assume 1 GB available on mobile
@@ -98,11 +107,11 @@ class FileManager {
   /// Clean up old temporary files (older than retention period).
   Future<void> cleanupTempFiles({Duration retention = const Duration(days: 7)}) async {
     try {
-      final tempDir = Directory(_tempDir);
-      if (!await tempDir.exists()) return;
+      final td = Directory(tempDir);
+      if (!await td.exists()) return;
 
       final now = DateTime.now();
-      await for (final entity in tempDir.list()) {
+      await for (final entity in td.list()) {
         if (entity is File && entity.path.endsWith('.part')) {
           final stat = await entity.stat();
           if (now.difference(stat.modified) > retention) {

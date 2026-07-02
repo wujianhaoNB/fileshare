@@ -9,6 +9,7 @@ import '../data/models/transfer_progress.dart';
 import '../data/models/transfer_record.dart';
 import '../data/repositories/transfer_repository.dart';
 import '../network/protocol/message.dart';
+import '../network/server/server_manager.dart';
 import '../network/transport/tcp_transport.dart';
 import 'file_manager.dart';
 
@@ -17,6 +18,7 @@ class TransferService {
   final AppLogger _logger = AppLogger();
   final TransferRepository _repository;
   final FileManager _fileManager;
+  final ServerManager _serverManager;
   final TcpTransport _transport = TcpTransport();
   final _uuid = const Uuid();
 
@@ -35,8 +37,32 @@ class TransferService {
   TransferService({
     required TransferRepository repository,
     required FileManager fileManager,
+    required ServerManager serverManager,
   })  : _repository = repository,
-        _fileManager = fileManager;
+        _fileManager = fileManager,
+        _serverManager = serverManager {
+    _wireServerCallbacks();
+  }
+
+  /// Wire up ServerManager callbacks for incoming transfers.
+  void _wireServerCallbacks() {
+    _serverManager.onMetadataReceived = (metadata) {
+      // The incoming transfer will be created by handleIncomingFile
+      _logger.info('Metadata received: ${metadata.fileName}');
+    };
+
+    _serverManager.onChunkReceived = (chunk, totalReceived) {
+      _logger.debug('Chunk received: offset=${chunk.offset}, total=$totalReceived');
+    };
+
+    _serverManager.onTransferComplete = () {
+      _logger.info('Incoming transfer complete');
+    };
+
+    _serverManager.onTransferError = (error) {
+      _logger.error('Incoming transfer error: $error');
+    };
+  }
 
   /// Send a file to a peer device.
   Future<String> sendFile({

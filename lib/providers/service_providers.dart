@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../data/database/app_database.dart';
 import '../data/repositories/device_repository.dart';
 import '../data/repositories/transfer_repository.dart';
+import '../network/server/server_manager.dart';
 import '../services/discovery_service.dart';
 import '../services/file_manager.dart';
 import '../services/transfer_service.dart';
@@ -28,10 +29,17 @@ final transferRepositoryProvider = Provider<TransferRepository>((ref) {
 /// File manager provider.
 final fileManagerProvider = Provider<FileManager>((ref) {
   final fm = FileManager();
-  ref.onDispose(() async {
-    // Cleanup is handled by the service layer
-  });
+  ref.onDispose(() async {});
   return fm;
+});
+
+/// Server manager provider (HTTP + TCP servers).
+final serverManagerProvider = Provider<ServerManager>((ref) {
+  final fileManager = ref.watch(fileManagerProvider);
+  // FileManager.init() must be called before creating ServerManager
+  final sm = ServerManager(tempDir: fileManager.tempDir);
+  ref.onDispose(() => sm.stop());
+  return sm;
 });
 
 /// Discovery service provider.
@@ -46,9 +54,11 @@ final discoveryServiceProvider = Provider<DiscoveryService>((ref) {
 final transferServiceProvider = Provider<TransferService>((ref) {
   final transferRepo = ref.watch(transferRepositoryProvider);
   final fileManager = ref.watch(fileManagerProvider);
+  final serverManager = ref.watch(serverManagerProvider);
   final service = TransferService(
     repository: transferRepo,
     fileManager: fileManager,
+    serverManager: serverManager,
   );
   ref.onDispose(() => service.dispose());
   return service;
