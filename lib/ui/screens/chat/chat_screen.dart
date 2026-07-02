@@ -58,87 +58,66 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with TickerProviderStat
     llmService.setModel(model.id);
     llmService.setApiKey(ref.read(apiKeyProvider));
 
-    // Add user message
     await convService.addUserMessage(convId, text);
     final assistantMsg = await convService.createAssistantMessage(convId);
 
     ref.read(isGeneratingProvider.notifier).state = true;
     ref.read(streamingTextProvider.notifier).state = '';
 
-    // Agent loop — up to 5 rounds of tool calling
     final buffer = StringBuffer();
-    final toolResults = <Map<String, dynamic>>[];
-    const maxRounds = 5;
 
     try {
-      for (var round = 0; round < maxRounds; round++) {
-        final messages = await convService.buildApiContext(convId, systemPrompt: AiConstants.defaultSystemPrompt);
-        // Add tool results from previous rounds
-        for (final tr in toolResults) {
-          messages.add({'role': 'tool', 'content': jsonEncode(tr), 'tool_call_id': tr['id'] ?? ''});
+      // STEP 1: Parse user intent LOCALLY and execute tools BEFORE LLM
+      final toolResults = <Map<String, dynamic>>[];
+      final triggeredTools = _matchIntent(text);
+
+      if (triggeredTools.isNotEmpty) {
+        for (final tool in triggeredTools) {
+          buffer.write('\n\n🔧 **${_toolLabel(tool)}**');
+          ref.read(streamingTextProvider.notifier).state = buffer.toString();
+          final result = await agent.executeTool(tool, {});
+          toolResults.add(result);
+          buffer.write(result['success'] == true ? ' ✓\n' : ' ✗\n');
+          ref.read(streamingTextProvider.notifier).state = buffer.toString();
         }
+      }
 
-        final response = await llmService.client.chat(
-          messages: messages,
-          tools: _buildTools(),
-          temperature: 0.7,
-          maxTokens: 2048,
-        );
+      // STEP 2: Build context with tool results injected
+      var context = '';
+      for (final r in toolResults) {
+        context += '\n[工具执行结果: ${jsonEncode(r)}]';
+      }
 
-        // Parse response for tool calls
-        final parsed = _parseToolCalls(response);
-        if (parsed.toolCalls.isNotEmpty) {
-          // Execute tools
-          for (final tc in parsed.toolCalls) {
-            final name = tc['function']['name'] as String? ?? '';
-            final args = tc['function']['arguments'] is String
-                ? jsonDecode(tc['function']['arguments'] as String) as Map<String, dynamic>
-                : (tc['function']['arguments'] as Map<String, dynamic>?) ?? {};
+      final messages = <Map<String, dynamic>>[
+        {'role': 'system', 'content': AiConstants.defaultSystemPrompt + '\n\n## 刚才执行的工具结果\n$context\n\n请根据以上真实数据用中文回复用户。直接给出结论，不要再说"让我看看/我来扫描"之类的话。'},
+      ];
 
-            buffer.write('\n\n🔧 **${_toolLabel(name)}**');
-            ref.read(streamingTextProvider.notifier).state = buffer.toString();
+      // Add recent history
+      final history = await convService.getMessages(convId, limit: 10);
+      for (final msg in history) {
+        if (msg.role != 'system') {
+          messages.add(msg.toApiFormat());
+        }
+      }
 
-            final result = await agent.executeTool(name, args);
-            toolResults.add({...result, 'id': tc['id'] ?? ''});
-
-            if (result['success'] == true) {
-              buffer.write(' → 完成');
-            } else {
-              buffer.write(' → 失败: ${result['error'] ?? '未知错误'}');
-            }
-            ref.read(streamingTextProvider.notifier).state = buffer.toString();
-          }
-
-          // Create tool result messages in conversation
-          for (final tr in toolResults) {
-            await convService.addUserMessage(convId, '[工具执行: ${tr['tool']} — ${tr['success'] == true ? "成功" : "失败"}]');
-          }
-        } else {
-          // No structured tool_calls — check if LLM is "faking" actions in text
-          final autoTool = _detectImpliedAction(parsed.text);
-          if (autoTool != null) {
-            // LLM mentioned an action but didn't call the tool — force execute it
-            buffer.write('\n\n🔧 **${_toolLabel(autoTool)}** (自动触发)');
-            ref.read(streamingTextProvider.notifier).state = buffer.toString();
-            final result = await agent.executeTool(autoTool, {});
-            toolResults.add({...result, 'id': 'auto'});
-            buffer.write(result['success'] == true ? ' → 完成\n\n' : ' → ${result['error'] ?? ""}\n\n');
-
-            // Get a follow-up response with the tool result
-            final followUp = await llmService.client.chat(
-              messages: await convService.buildApiContext(convId, systemPrompt: AiConstants.defaultSystemPrompt),
-              maxTokens: 1024, temperature: 0.7,
-            );
-            final parsed2 = _parseToolCalls(followUp);
-            buffer.write(parsed2.text.isNotEmpty ? parsed2.text : '根据查询结果，${_summarizeResult(autoTool, result)}');
-          } else if (parsed.text.isNotEmpty) {
-            buffer.write(parsed.text);
-          }
-          break; // Done
+      // STEP 3: LLM generates natural response based on real data
+      try {
+        await for (final chunk in llmService.client.chatStream(messages: messages, temperature: 0.7, maxTokens: 1024)) {
+          buffer.write(chunk.startsWith('__TOOL_CALL__') ? '' : chunk);
+          ref.read(streamingTextProvider.notifier).state = buffer.toString();
+        }
+      } catch (_) {
+        // Fallback: non-streaming
+        try {
+          final resp = await llmService.client.chat(messages: messages, temperature: 0.7, maxTokens: 1024);
+          buffer.write(resp);
+          ref.read(streamingTextProvider.notifier).state = buffer.toString();
+        } catch (e2) {
+          buffer.write('\n\n❌ ${e2.toString().substring(0, 100)}');
         }
       }
     } catch (e) {
-      buffer.write('\n\n❌ ${e.toString().length > 100 ? e.toString().substring(0, 100) : e}');
+      buffer.write('\n\n❌ ${e.toString().substring(0, 100)}');
     }
 
     final finalText = buffer.toString();
@@ -232,6 +211,33 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with TickerProviderStat
     } catch (_) {
       return _ParsedResponse(text: response);
     }
+  }
+
+  /// Local intent matching — parse user input and decide which tools to call.
+  /// Returns list of tool names to execute (BEFORE sending to LLM).
+  List<String> _matchIntent(String input) {
+    final tools = <String>[];
+    final t = input.toLowerCase();
+
+    // Device discovery / listing
+    if (_hasAny(t, ['设备', '在线', '发现', '扫描', '连接', '平板', '电脑', '手机', '我的', '看看', '查看', '查找', '找到', '列出', '哪些', '几台', '什么设备', '连我', '连上', '发文件', '发送', '传输', '传文件', '传给', '传到', '发给', '发送给'])) {
+      tools.add('list_devices');
+    }
+    // Smart home
+    if (_hasAny(t, ['智能', '灯', '空调', '窗帘', '开关', '打开', '关闭', '调', '温度', '家居', 'home'])) {
+      tools.add('list_smart_devices');
+    }
+    // App status
+    if (_hasAny(t, ['状态', '运行', '怎么样', '信息', '版本', '情况'])) {
+      tools.add('get_app_status');
+    }
+
+    // Dedup
+    return tools.toSet().toList();
+  }
+
+  bool _hasAny(String text, List<String> keywords) {
+    return keywords.any((k) => text.contains(k));
   }
 
   /// Detect if LLM is "faking" an action — saying it will do something without actually calling a tool.

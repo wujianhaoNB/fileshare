@@ -91,6 +91,10 @@ class ConversationService {
   /// Delete a conversation and its messages.
   Future<void> deleteConversation(String id) => _repository.deleteConversation(id);
 
+  /// Get messages for a conversation.
+  Future<List<ChatMessage>> getMessages(String conversationId, {int limit = 100, int offset = 0}) =>
+      _repository.getMessages(conversationId, limit: limit, offset: offset);
+
   /// Watch messages for a conversation.
   Stream<List<ChatMessage>> watchMessages(String conversationId) =>
       _repository.watchMessages(conversationId);
