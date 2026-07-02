@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
@@ -7,8 +8,6 @@ import 'package:uuid/uuid.dart';
 import '../../../core/constants/ai_constants.dart';
 import '../../../data/models/chat_message.dart';
 import '../../../providers/ai_providers.dart';
-import '../../../services/conversation_service.dart';
-import '../../../services/llm_service.dart';
 
 class ChatScreen extends ConsumerStatefulWidget {
   const ChatScreen({super.key});
@@ -46,11 +45,6 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with TickerProviderStat
   Future<void> _sendMessage() async {
     final text = _textController.text.trim();
     if (text.isEmpty) return;
-    final apiKey = ref.read(apiKeyProvider);
-    if (apiKey.isEmpty) {
-      _showSnack('请先设置 DeepSeek API Key');
-      return;
-    }
 
     _textController.clear();
     _showWelcome = false;
@@ -58,33 +52,170 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with TickerProviderStat
     if (convId == null) return;
 
     final convService = ref.read(conversationServiceProvider);
-    await convService.addUserMessage(convId, text);
-
-    final model = ref.read(selectedModelProvider);
     final llmService = ref.read(llmServiceProvider);
+    final agent = ref.read(agentServiceProvider);
+    final model = ref.read(selectedModelProvider);
     llmService.setModel(model.id);
-    llmService.setApiKey(apiKey);
+    llmService.setApiKey(ref.read(apiKeyProvider));
 
+    // Add user message
+    await convService.addUserMessage(convId, text);
     final assistantMsg = await convService.createAssistantMessage(convId);
-    final messages = await convService.buildApiContext(convId, systemPrompt: AiConstants.defaultSystemPrompt);
 
     ref.read(isGeneratingProvider.notifier).state = true;
     ref.read(streamingTextProvider.notifier).state = '';
+
+    // Agent loop — up to 5 rounds of tool calling
     final buffer = StringBuffer();
+    final toolResults = <Map<String, dynamic>>[];
+    const maxRounds = 5;
 
     try {
-      await for (final chunk in llmService.chatStream(messages: messages)) {
-        buffer.write(chunk.startsWith('__TOOL_CALL__') ? '\n\n🔧 _..._' : chunk);
-        ref.read(streamingTextProvider.notifier).state = buffer.toString();
+      for (var round = 0; round < maxRounds; round++) {
+        final messages = await convService.buildApiContext(convId, systemPrompt: AiConstants.defaultSystemPrompt);
+        // Add tool results from previous rounds
+        for (final tr in toolResults) {
+          messages.add({'role': 'tool', 'content': jsonEncode(tr), 'tool_call_id': tr['id'] ?? ''});
+        }
+
+        final response = await llmService.client.chat(
+          messages: messages,
+          tools: _buildTools(),
+          temperature: 0.7,
+          maxTokens: 2048,
+        );
+
+        // Parse response for tool calls
+        final parsed = _parseToolCalls(response);
+        if (parsed.toolCalls.isNotEmpty) {
+          // Execute tools
+          for (final tc in parsed.toolCalls) {
+            final name = tc['function']['name'] as String? ?? '';
+            final args = tc['function']['arguments'] is String
+                ? jsonDecode(tc['function']['arguments'] as String) as Map<String, dynamic>
+                : (tc['function']['arguments'] as Map<String, dynamic>?) ?? {};
+
+            buffer.write('\n\n🔧 **${_toolLabel(name)}**');
+            ref.read(streamingTextProvider.notifier).state = buffer.toString();
+
+            final result = await agent.executeTool(name, args);
+            toolResults.add({...result, 'id': tc['id'] ?? ''});
+
+            if (result['success'] == true) {
+              buffer.write(' → 完成');
+            } else {
+              buffer.write(' → 失败: ${result['error'] ?? '未知错误'}');
+            }
+            ref.read(streamingTextProvider.notifier).state = buffer.toString();
+          }
+
+          // Create tool result messages in conversation
+          for (final tr in toolResults) {
+            await convService.addUserMessage(convId, '[工具执行: ${tr['tool']} — ${tr['success'] == true ? "成功" : "失败"}]');
+          }
+        } else {
+          // No tool calls — got text response
+          if (parsed.text.isNotEmpty) {
+            buffer.write(parsed.text);
+          }
+          break; // Done
+        }
       }
     } catch (e) {
       buffer.write('\n\n❌ ${e.toString().length > 100 ? e.toString().substring(0, 100) : e}');
     }
 
-    await convService.updateAssistantContent(assistantMsg.id, buffer.toString());
+    final finalText = buffer.toString();
+    await convService.updateAssistantContent(assistantMsg.id, finalText.isEmpty ? '好的，我理解你的需求。让我知道更多细节以便更好地帮助你。' : finalText);
     ref.read(isGeneratingProvider.notifier).state = false;
     ref.read(streamingTextProvider.notifier).state = '';
     _scrollDown();
+  }
+
+  /// Build the tool definitions for LLM function calling.
+  List<Map<String, dynamic>> _buildTools() {
+    return [
+      _toolDef('list_devices', '获取当前局域网内所有在线设备列表，包括设备名称、IP、类型和可用能力', {
+        'type': 'object', 'properties': {}, 'required': [],
+      }),
+      _toolDef('send_file', '发送文件到指定设备。需要目标设备的名称', {
+        'type': 'object',
+        'properties': {
+          'device_name': {'type': 'string', 'description': '目标设备名称，如"我的电脑"'},
+        },
+        'required': ['device_name'],
+      }),
+      _toolDef('start_discovery', '启动/刷新设备发现，扫描局域网内的设备', {
+        'type': 'object', 'properties': {}, 'required': [],
+      }),
+      _toolDef('get_device_capabilities', '查询某台设备的详细能力列表', {
+        'type': 'object',
+        'properties': {'device_name': {'type': 'string'}},
+        'required': ['device_name'],
+      }),
+      _toolDef('list_smart_devices', '获取智能家居设备列表', {
+        'type': 'object', 'properties': {}, 'required': [],
+      }),
+      _toolDef('control_smart_device', '控制智能家居设备开关或调节', {
+        'type': 'object',
+        'properties': {
+          'device_name': {'type': 'string'},
+          'action': {'type': 'string', 'enum': ['turn_on', 'turn_off', 'toggle']},
+        },
+        'required': ['device_name', 'action'],
+      }),
+      _toolDef('create_reminder', '创建一个定时提醒', {
+        'type': 'object',
+        'properties': {
+          'title': {'type': 'string', 'description': '提醒标题'},
+          'time': {'type': 'string', 'description': '提醒时间，如 "18:30" 或 "in 30 minutes"'},
+        },
+        'required': ['title', 'time'],
+      }),
+      _toolDef('get_app_status', '查询当前应用的运行状态，包括服务器是否启动、已配对设备数量、传输历史等', {
+        'type': 'object', 'properties': {}, 'required': [],
+      }),
+    ];
+  }
+
+  Map<String, dynamic> _toolDef(String name, String desc, Map<String, dynamic> params) {
+    return {
+      'type': 'function',
+      'function': {'name': name, 'description': desc, 'parameters': params},
+    };
+  }
+
+  String _toolLabel(String name) {
+    switch (name) {
+      case 'list_devices': return '正在扫描在线设备...';
+      case 'send_file': return '正在准备文件传输...';
+      case 'start_discovery': return '正在启动设备发现...';
+      case 'get_device_capabilities': return '正在查询设备能力...';
+      case 'list_smart_devices': return '正在获取智能设备列表...';
+      case 'control_smart_device': return '正在控制设备...';
+      case 'create_reminder': return '正在创建提醒...';
+      case 'get_app_status': return '正在查询应用状态...';
+      default: return '正在执行 $name...';
+    }
+  }
+
+  /// Parse LLM response into text + tool calls.
+  _ParsedResponse _parseToolCalls(String response) {
+    try {
+      final json = jsonDecode(response);
+      final choices = json['choices'] as List?;
+      if (choices == null || choices.isEmpty) return _ParsedResponse(text: response);
+
+      final message = choices[0]['message'];
+      if (message == null) return _ParsedResponse(text: response);
+
+      final content = message['content'] as String? ?? '';
+      final toolCalls = (message['tool_calls'] as List?)?.cast<Map<String, dynamic>>() ?? [];
+
+      return _ParsedResponse(text: content, toolCalls: toolCalls);
+    } catch (_) {
+      return _ParsedResponse(text: response);
+    }
   }
 
   void _scrollDown() {
@@ -453,6 +584,13 @@ class _MsgBubble extends StatelessWidget {
       ),
     );
   }
+}
+
+// ── Response parser ──
+class _ParsedResponse {
+  final String text;
+  final List<Map<String, dynamic>> toolCalls;
+  const _ParsedResponse({this.text = '', this.toolCalls = const []});
 }
 
 // ── Typing indicator ──
