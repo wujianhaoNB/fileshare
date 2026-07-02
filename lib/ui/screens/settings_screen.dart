@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -152,7 +153,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                     TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('取消')),
                     FilledButton(onPressed: () => Navigator.pop(c, true), child: const Text('清除')),
                   ]));
-                  if (ok == true) { ref.read(chatRepositoryProvider).close(); }
+                  if (ok == true) { unawaited(ref.read(chatRepositoryProvider).close()); }
                 }),
               ],
             ),

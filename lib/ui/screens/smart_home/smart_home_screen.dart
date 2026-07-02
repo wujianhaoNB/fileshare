@@ -11,9 +11,6 @@ class SmartHomeScreen extends ConsumerStatefulWidget {
 }
 
 class _SmartHomeScreenState extends ConsumerState<SmartHomeScreen> {
-  String? _haUrl;
-  String? _haToken;
-
   @override
   void initState() {
     super.initState();
@@ -26,7 +23,6 @@ class _SmartHomeScreenState extends ConsumerState<SmartHomeScreen> {
       barrierDismissible: false,
       builder: (ctx) => _ConfigDialog(
         onConnect: (url, token) {
-          _haUrl = url; _haToken = token;
           ref.read(smartHomeServiceProvider).configureHomeAssistant(url: url, token: token);
           ref.read(smartHomeServiceProvider).discoverFromHA();
         },

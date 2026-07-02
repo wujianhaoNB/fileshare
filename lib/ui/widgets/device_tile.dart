@@ -68,8 +68,8 @@ class DeviceListTile extends StatelessWidget {
     if (device.isPaired) {
       return CircleAvatar(
         backgroundColor: device.isVerified
-            ? Colors.blue.withOpacity(0.2)
-            : Colors.green.withOpacity(0.2),
+            ? Colors.blue.withValues(alpha: 0.2)
+            : Colors.green.withValues(alpha: 0.2),
         child: Icon(
           Icons.phone_android,
           color: device.isVerified ? Colors.blue : Colors.green,

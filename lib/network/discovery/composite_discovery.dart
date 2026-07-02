@@ -48,7 +48,7 @@ class CompositeDiscovery {
     await _mdns.start();
 
     // Run subnet scan in parallel
-    _subnetScanner.scan(knownIps: knownIps, ownIp: _ownIp);
+    unawaited(_subnetScanner.scan(knownIps: knownIps, ownIp: _ownIp));
   }
 
   /// Refresh discovery.
