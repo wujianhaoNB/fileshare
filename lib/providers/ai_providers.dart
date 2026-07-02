@@ -1,4 +1,4 @@
-import 'package:flutter_riverpod/flutter_riverpod.dart';
+﻿import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../core/constants/ai_constants.dart';
 import '../data/models/chat_message.dart';
 import '../data/models/conversation.dart';
@@ -82,16 +82,16 @@ final isGeneratingProvider = StateProvider<bool>((ref) => false);
 final streamingTextProvider = StateProvider<String>((ref) => '');
 
 final availableModelsProvider = Provider<List<ModelOption>>((ref) => [
-  ModelOption(id: AiConstants.deepseekChatModel, name: 'DeepSeek V3', provider: 'deepseek'),
-  ModelOption(id: AiConstants.deepseekReasonerModel, name: 'DeepSeek R1', provider: 'deepseek'),
-  ModelOption(id: 'qwen2.5:7b', name: 'Qwen2.5 7B (本地)', provider: 'ollama'),
+  ModelOption(id: AiConstants.deepseekChatModel, name: 'DeepSeek V4 Pro', provider: 'deepseek'),
+  ModelOption(id: AiConstants.deepseekReasonerModel, name: 'DeepSeek V3', provider: 'deepseek'),
+  ModelOption(id: 'qwen2.5:7b', name: 'Qwen2.5 7B (鏈湴)', provider: 'ollama'),
 ]);
 
 final selectedModelProvider = StateProvider<ModelOption>((ref) => ModelOption(
-  id: AiConstants.deepseekChatModel, name: 'DeepSeek V3', provider: 'deepseek',
+  id: AiConstants.deepseekChatModel, name: 'DeepSeek V4 Pro', provider: 'deepseek',
 ));
 
-final apiKeyProvider = StateProvider<String>((ref) => '');
+final apiKeyProvider = StateProvider<String>((ref) => 'sk-047069f5f23644cfa164563f60a48465');
 
 // Mesh devices stream
 final meshDevicesProvider = StreamProvider<List<DeviceCapability>>((ref) {
@@ -157,10 +157,10 @@ class ModelOption {
   const ModelOption({required this.id, required this.name, required this.provider});
 }
 
-/// Built-in notify primitive — AI can show notifications to the user.
+/// Built-in notify primitive 鈥?AI can show notifications to the user.
 class _NotifyPrimitive extends Primitive {
   @override String get name => 'notify_user';
-  @override String get description => '向用户显示通知消息';
+  @override String get description => '鍚戠敤鎴锋樉绀洪€氱煡娑堟伅';
   @override Map<String, dynamic> get parametersSchema => {
     'type': 'object',
     'properties': {

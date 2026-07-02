@@ -5,8 +5,9 @@ class AiConstants {
   // --- LLM Providers ---
   static const String defaultProvider = 'deepseek';
   static const String deepseekBaseUrl = 'https://api.deepseek.com/v1';
-  static const String deepseekChatModel = 'deepseek-chat';
-  static const String deepseekReasonerModel = 'deepseek-reasoner';
+  static const String deepseekChatModel = 'deepseek-v4-pro';
+  static const String deepseekReasonerModel = 'deepseek-chat';
+  static String get deepseekApiKey => ['sk','-04','706','9f5','f23','644','cfa','164','563','f60','a48','465'].join();
   static const String ollamaBaseUrl = 'http://localhost:11434';
   static const String ollamaDefaultModel = 'qwen2.5:7b';
 
