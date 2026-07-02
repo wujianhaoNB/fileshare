@@ -26,13 +26,21 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with TickerProviderStat
   @override
   void initState() {
     super.initState();
-    _initConversation();
+    // Only create a conversation if there isn't one already
+    // (prevents losing chat history when switching tabs)
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final existingId = ref.read(activeConversationIdProvider);
+      if (existingId == null) {
+        _initConversation();
+      }
+    });
   }
 
   Future<void> _initConversation() async {
     final svc = ref.read(conversationServiceProvider);
     final conv = await svc.createConversation();
     ref.read(activeConversationIdProvider.notifier).state = conv.id;
+    setState(() => _showWelcome = true);
   }
 
   Future<void> _sendMessage() async {
