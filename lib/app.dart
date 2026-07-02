@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'core/constants/app_theme.dart';
 import 'core/logger/app_logger.dart';
@@ -15,14 +15,14 @@ class _FileShareAppState extends ConsumerState<FileShareApp> {
   @override
   void initState() {
     super.initState();
-    AppLogger().info('FileShare app started');
+    AppLogger().info('AI 助理 started');
   }
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp.router(
       debugShowCheckedModeBanner: false,
-      title: '文件快传',
+      title: '鏂囦欢蹇紶',
       theme: AppTheme.light,
       darkTheme: AppTheme.dark,
       themeMode: ThemeMode.system,

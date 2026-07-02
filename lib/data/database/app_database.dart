@@ -17,7 +17,6 @@ part 'app_database.g.dart';
     TransferResume,
     AppSettings,
   ],
-
 )
 class AppDatabase extends _$AppDatabase {
   AppDatabase() : super(_openConnection());
