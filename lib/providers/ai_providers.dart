@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../core/constants/ai_constants.dart';
 import '../data/models/chat_message.dart';
 import '../data/models/conversation.dart';
+import '../data/models/smart_home_device.dart';
 import '../data/repositories/chat_repository.dart';
 import '../services/conversation_service.dart';
 import '../services/llm_service.dart';
@@ -9,6 +10,10 @@ import '../services/evolution_engine.dart';
 import '../services/memory_service.dart';
 import '../services/device_mesh_service.dart';
 import '../services/agent_core.dart';
+import '../services/smart_home_service.dart';
+import '../services/automation_service.dart';
+import '../services/personal_development_service.dart';
+import '../platform/phone_integration.dart';
 import '../services/primitives/primitive_registry.dart';
 
 // --- Foundation ---
@@ -96,6 +101,55 @@ final meshDevicesProvider = StreamProvider<List<DeviceCapability>>((ref) {
 // Memory stats
 final memoryStatsProvider = Provider<Map<String, int>>((ref) {
   return ref.watch(memoryServiceProvider).categoryCounts;
+});
+
+// --- Smart Home ---
+
+final smartHomeServiceProvider = Provider<SmartHomeService>((ref) {
+  final svc = SmartHomeService();
+  ref.onDispose(() => svc.stop());
+  return svc;
+});
+
+final smartHomeDevicesProvider = StreamProvider<List<SmartHomeDevice>>((ref) {
+  return ref.watch(smartHomeServiceProvider).devices;
+});
+
+// --- Automation ---
+
+final automationServiceProvider = Provider<AutomationService>((ref) {
+  final primitives = ref.watch(primitiveRegistryProvider);
+  final svc = AutomationService(primitives: primitives);
+  ref.onDispose(() => svc.stop());
+  return svc;
+});
+
+final automationRulesProvider = StreamProvider<List<AutomationRule>>((ref) {
+  return ref.watch(automationServiceProvider).rules;
+});
+
+// --- Personal Development ---
+
+final personalDevelopmentProvider = Provider<PersonalDevelopmentService>((ref) {
+  final svc = PersonalDevelopmentService();
+  svc.initDefaultDimensions();
+  return svc;
+});
+
+final userProfileScoreProvider = Provider<double>((ref) {
+  return ref.watch(personalDevelopmentProvider).overallScore;
+});
+
+// --- Phone Integration ---
+
+final phoneIntegrationProvider = Provider<PhoneIntegrationService>((ref) {
+  final svc = PhoneIntegrationService();
+  ref.onDispose(() => svc.stop());
+  return svc;
+});
+
+final phoneNotificationsProvider = StreamProvider<List<PhoneNotification>>((ref) {
+  return ref.watch(phoneIntegrationProvider).notifications.map((n) => [n]);
 });
 
 class ModelOption {
