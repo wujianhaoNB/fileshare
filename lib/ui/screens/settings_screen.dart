@@ -1,270 +1,214 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../core/constants/app_strings.dart';
 import '../../core/utils/network_utils.dart';
 import '../../providers/settings_providers.dart';
 import '../../providers/service_providers.dart';
+import '../../providers/ai_providers.dart';
 
-/// Settings screen for configuring the app.
 class SettingsScreen extends ConsumerStatefulWidget {
   const SettingsScreen({super.key});
-
   @override
   ConsumerState<SettingsScreen> createState() => _SettingsScreenState();
 }
 
 class _SettingsScreenState extends ConsumerState<SettingsScreen> {
-  late final TextEditingController _nameController;
-  late final TextEditingController _controlPortController;
-  late final TextEditingController _dataPortController;
+  late final _apiKeyCtrl = TextEditingController();
+  late final _nameCtrl = TextEditingController();
 
   @override
   void initState() {
     super.initState();
-    _nameController = TextEditingController(
-      text: ref.read(deviceNameProvider),
-    );
-    _controlPortController = TextEditingController(
-      text: ref.read(controlPortProvider).toString(),
-    );
-    _dataPortController = TextEditingController(
-      text: ref.read(dataPortProvider).toString(),
-    );
+    _apiKeyCtrl.text = ref.read(apiKeyProvider);
+    _nameCtrl.text = ref.read(deviceNameProvider);
   }
 
   @override
   void dispose() {
-    _nameController.dispose();
-    _controlPortController.dispose();
-    _dataPortController.dispose();
+    _apiKeyCtrl.dispose();
+    _nameCtrl.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     final isServerRunning = ref.watch(isServerRunningProvider);
     final bluetoothEnabled = ref.watch(bluetoothEnabledProvider);
+    final model = ref.watch(selectedModelProvider);
+    final models = ref.watch(availableModelsProvider);
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text(AppStrings.settings),
-      ),
+      appBar: AppBar(title: const Text('设置'), actions: [
+        TextButton(onPressed: () => context.go('/'), child: const Text('完成')),
+      ]),
       body: ListView(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 100),
         children: [
-          // Device Name
-          TextField(
-            controller: _nameController,
-            decoration: const InputDecoration(
-              labelText: AppStrings.deviceName,
-              hintText: 'Enter your device name',
-              prefixIcon: Icon(Icons.phone_android),
+          _Section('AI 模型'),
+          // API Key
+          Container(
+            margin: const EdgeInsets.only(bottom: 12),
+            decoration: BoxDecoration(color: theme.colorScheme.surfaceContainerHighest, borderRadius: BorderRadius.circular(14)),
+            child: TextField(
+              controller: _apiKeyCtrl,
+              obscureText: true,
+              decoration: InputDecoration(
+                labelText: 'DeepSeek API Key',
+                hintText: 'sk-...',
+                prefixIcon: const Icon(Icons.key_rounded),
+                suffixIcon: IconButton(icon: const Icon(Icons.paste_rounded, size: 18), onPressed: () async {
+                  final data = await Clipboard.getData(Clipboard.kTextPlain);
+                  if (data?.text != null) { _apiKeyCtrl.text = data!.text!; ref.read(apiKeyProvider.notifier).state = data.text!; }
+                }),
+                border: InputBorder.none, contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+              ),
+              onChanged: (v) => ref.read(apiKeyProvider.notifier).state = v,
             ),
-            onChanged: (value) {
-              ref.read(deviceNameProvider.notifier).state = value;
-            },
           ),
-          const SizedBox(height: 24),
-
-          // Network section
-          Text(
-            'Network',
-            style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                  color: Theme.of(context).colorScheme.primary,
-                ),
+          // Model selector
+          Container(
+            decoration: BoxDecoration(color: theme.colorScheme.surfaceContainerHighest, borderRadius: BorderRadius.circular(14)),
+            child: Column(
+              children: models.map((m) => RadioListTile<String>(
+                title: Text(m.name, style: theme.textTheme.bodyLarge),
+                subtitle: Text(m.provider == 'ollama' ? '本地 Ollama' : '云端 API', style: theme.textTheme.bodySmall),
+                secondary: Icon(m.provider == 'ollama' ? Icons.computer_rounded : Icons.cloud_rounded),
+                value: m.id, groupValue: model.id,
+                onChanged: (v) { if (v != null) { final s = models.firstWhere((x) => x.id == v); ref.read(selectedModelProvider.notifier).state = s; } },
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+              )).toList(),
+            ),
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 28),
 
-          Card(
+          _Section('设备名称'),
+          Container(
+            decoration: BoxDecoration(color: theme.colorScheme.surfaceContainerHighest, borderRadius: BorderRadius.circular(14)),
+            child: TextField(
+              controller: _nameCtrl,
+              decoration: const InputDecoration(hintText: '我的设备', prefixIcon: Icon(Icons.phone_android_rounded), border: InputBorder.none, contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 14)),
+              onChanged: (v) => ref.read(deviceNameProvider.notifier).state = v,
+            ),
+          ),
+          const SizedBox(height: 28),
+
+          _Section('网络与发现'),
+          Container(
+            decoration: BoxDecoration(color: theme.colorScheme.surfaceContainerHighest, borderRadius: BorderRadius.circular(14)),
             child: Column(
               children: [
-                ListTile(
-                  title: const Text('Server Status'),
-                  subtitle: Text(
-                    isServerRunning ? 'Running' : 'Stopped',
-                  ),
-                  trailing: Switch(
-                    value: isServerRunning,
-                    onChanged: (value) async {
-                      if (value) {
-                        final discoveryService = ref.read(discoveryServiceProvider);
-                        final deviceName = ref.read(deviceNameProvider);
-                        final controlPort = ref.read(controlPortProvider);
-                        try {
-                          await discoveryService.start(
-                            deviceName: deviceName,
-                            port: controlPort,
-                          );
-                          ref.read(isServerRunningProvider.notifier).state = true;
-                        } catch (e) {
-                          if (mounted) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(content: Text('Failed to start: $e')),
-                            );
-                          }
-                        }
-                      } else {
-                        final discoveryService = ref.read(discoveryServiceProvider);
-                        await discoveryService.stop();
-                        ref.read(isServerRunningProvider.notifier).state = false;
-                      }
-                    },
-                  ),
-                ),
-                ListTile(
-                  title: const Text('Control Port'),
-                  subtitle: Text('Port: ${ref.watch(controlPortProvider)}'),
-                ),
-                ListTile(
-                  title: const Text('Data Port'),
-                  subtitle: Text('Port: ${ref.watch(dataPortProvider)}'),
-                ),
+                _ToggleTile(icon: Icons.wifi_rounded, title: '服务状态', subtitle: isServerRunning ? '运行中' : '已停止', value: isServerRunning, onChanged: (v) async {
+                  if (v) {
+                    final ds = ref.read(discoveryServiceProvider);
+                    final sm = ref.read(serverManagerProvider);
+                    final fm = ref.read(fileManagerProvider);
+                    await fm.init();
+                    await sm.start(deviceName: ref.read(deviceNameProvider), hasBluetooth: ref.read(bluetoothEnabledProvider));
+                    await ds.start(deviceName: ref.read(deviceNameProvider), port: ref.read(controlPortProvider));
+                    ref.read(isServerRunningProvider.notifier).state = true;
+                  } else {
+                    await ref.read(discoveryServiceProvider).stop();
+                    ref.read(isServerRunningProvider.notifier).state = false;
+                  }
+                }),
+                const _Divider(),
+                _ToggleTile(icon: Icons.bluetooth_rounded, title: '蓝牙', subtitle: 'Wi-Fi 不可用时使用蓝牙', value: bluetoothEnabled, onChanged: (v) => ref.read(bluetoothEnabledProvider.notifier).state = v),
               ],
             ),
           ),
+          const SizedBox(height: 28),
 
-          const SizedBox(height: 24),
-
-          // Bluetooth section
-          Text(
-            'Bluetooth',
-            style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                  color: Theme.of(context).colorScheme.primary,
-                ),
-          ),
-          const SizedBox(height: 8),
-
-          Card(
-            child: SwitchListTile(
-              title: const Text('Enable Bluetooth'),
-              subtitle: const Text('Use Bluetooth when Wi-Fi is unavailable'),
-              value: bluetoothEnabled,
-              onChanged: (value) {
-                ref.read(bluetoothEnabledProvider.notifier).state = value;
-              },
-            ),
-          ),
-
-          const SizedBox(height: 24),
-
-          // Pairing section
-          Text(
-            'Pairing',
-            style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                  color: Theme.of(context).colorScheme.primary,
-                ),
-          ),
-          const SizedBox(height: 8),
-
-          Card(
+          _Section('设备配对'),
+          Container(
+            decoration: BoxDecoration(color: theme.colorScheme.surfaceContainerHighest, borderRadius: BorderRadius.circular(14)),
             child: Column(
               children: [
-                ListTile(
-                  leading: const Icon(Icons.qr_code),
-                  title: const Text('Show My QR Code'),
-                  subtitle: const Text('Other devices can scan to pair'),
-                  trailing: const Icon(Icons.chevron_right),
-                  onTap: () {
-                    context.push('/qr-display');
-                  },
-                ),
-                const Divider(height: 1),
-                ListTile(
-                  leading: const Icon(Icons.qr_code_scanner),
-                  title: const Text('Scan QR Code'),
-                  subtitle: const Text('Pair with another device'),
-                  trailing: const Icon(Icons.chevron_right),
-                  onTap: () {
-                    context.push('/qr-scan');
-                  },
-                ),
+                _NavTile(icon: Icons.qr_code_rounded, title: '展示我的二维码', subtitle: '其他设备扫描后配对', onTap: () => context.push('/qr-display')),
+                const _Divider(),
+                _NavTile(icon: Icons.qr_code_scanner_rounded, title: '扫描二维码', subtitle: '配对另一台设备', onTap: () => context.push('/qr-scan')),
               ],
             ),
           ),
+          const SizedBox(height: 28),
 
-          const SizedBox(height: 24),
-
-          // Storage section
-          Text(
-            'Storage',
-            style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                  color: Theme.of(context).colorScheme.primary,
-                ),
-          ),
-          const SizedBox(height: 8),
-
-          Card(
+          _Section('数据管理'),
+          Container(
+            decoration: BoxDecoration(color: theme.colorScheme.surfaceContainerHighest, borderRadius: BorderRadius.circular(14)),
             child: Column(
               children: [
-                ListTile(
-                  title: const Text('Clear Transfer History'),
-                  leading: const Icon(Icons.delete_sweep),
-                  onTap: () async {
-                    final confirm = await showDialog<bool>(
-                      context: context,
-                      builder: (context) => AlertDialog.adaptive(
-                        title: const Text('Clear History'),
-                        content: const Text(
-                          'Delete all transfer history? This cannot be undone.',
-                        ),
-                        actions: [
-                          TextButton(
-                            onPressed: () => Navigator.pop(context, false),
-                            child: const Text('Cancel'),
-                          ),
-                          FilledButton(
-                            onPressed: () => Navigator.pop(context, true),
-                            child: const Text('Clear'),
-                          ),
-                        ],
-                      ),
-                    );
-                    if (confirm == true) {
-                      final transferRepo = ref.read(transferRepositoryProvider);
-                      await transferRepo.clearHistory();
-                      if (mounted) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('History cleared')),
-                        );
-                      }
-                    }
-                  },
-                ),
+                _NavTile(icon: Icons.delete_sweep_rounded, title: '清除传输历史', subtitle: '删除所有文件传输记录', onTap: () async {
+                  final ok = await showDialog<bool>(context: context, builder: (c) => AlertDialog(title: const Text('确认'), content: const Text('删除所有传输历史？此操作不可撤销。'), actions: [
+                    TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('取消')),
+                    FilledButton(onPressed: () => Navigator.pop(c, true), child: const Text('清除')),
+                  ]));
+                  if (ok == true) { await ref.read(transferRepositoryProvider).clearHistory(); }
+                }),
+                const _Divider(),
+                _NavTile(icon: Icons.memory_rounded, title: '清除 AI 记忆', subtitle: '删除所有 AI 对话和记忆', onTap: () async {
+                  final ok = await showDialog<bool>(context: context, builder: (c) => AlertDialog(title: const Text('确认'), content: const Text('删除所有对话和 AI 记忆？'), actions: [
+                    TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('取消')),
+                    FilledButton(onPressed: () => Navigator.pop(c, true), child: const Text('清除')),
+                  ]));
+                  if (ok == true) { ref.read(chatRepositoryProvider).close(); }
+                }),
               ],
             ),
           ),
+          const SizedBox(height: 28),
 
-          const SizedBox(height: 24),
-
-          // About section
-          Text(
-            'About',
-            style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                  color: Theme.of(context).colorScheme.primary,
-                ),
-          ),
-          const SizedBox(height: 8),
-
-          Card(
+          _Section('关于'),
+          Container(
+            decoration: BoxDecoration(color: theme.colorScheme.surfaceContainerHighest, borderRadius: BorderRadius.circular(14)),
             child: Column(
               children: [
-                const ListTile(
-                  title: Text('FileShare'),
-                  subtitle: Text('Version 1.0.0 (MVP)'),
-                  leading: Icon(Icons.info),
-                ),
-                ListTile(
-                  title: const Text('Hostname'),
-                  subtitle: Text(NetworkUtils.hostname),
-                  leading: const Icon(Icons.dns),
-                ),
+                const _InfoTile(icon: Icons.info_rounded, title: 'AI 助理', subtitle: 'Version 2.0.0 — Phase 0+'),
+                const _Divider(),
+                _InfoTile(icon: Icons.dns_rounded, title: '主机名', subtitle: NetworkUtils.hostname),
               ],
             ),
           ),
-          const SizedBox(height: 80),
         ],
       ),
     );
   }
+}
+
+class _Section extends StatelessWidget {
+  final String title;
+  const _Section(this.title);
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.only(bottom: 10),
+    child: Text(title, style: Theme.of(context).textTheme.titleSmall?.copyWith(color: const Color(0xFF7C5CFC), fontWeight: FontWeight.w700, letterSpacing: 0.3)),
+  );
+}
+
+class _ToggleTile extends StatelessWidget {
+  final IconData icon; final String title, subtitle; final bool value; final ValueChanged<bool> onChanged;
+  const _ToggleTile({required this.icon, required this.title, required this.subtitle, required this.value, required this.onChanged});
+  @override
+  Widget build(BuildContext context) => SwitchListTile(secondary: Icon(icon), title: Text(title, style: Theme.of(context).textTheme.bodyLarge), subtitle: Text(subtitle, style: Theme.of(context).textTheme.bodySmall), value: value, onChanged: onChanged, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)));
+}
+
+class _NavTile extends StatelessWidget {
+  final IconData icon; final String title, subtitle; final VoidCallback onTap;
+  const _NavTile({required this.icon, required this.title, required this.subtitle, required this.onTap});
+  @override
+  Widget build(BuildContext context) => ListTile(leading: Icon(icon), title: Text(title, style: Theme.of(context).textTheme.bodyLarge), subtitle: Text(subtitle, style: Theme.of(context).textTheme.bodySmall), trailing: const Icon(Icons.chevron_right_rounded, size: 20, color: Color(0xFF8B8A9A)), onTap: onTap, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)));
+}
+
+class _InfoTile extends StatelessWidget {
+  final IconData icon; final String title, subtitle;
+  const _InfoTile({required this.icon, required this.title, required this.subtitle});
+  @override
+  Widget build(BuildContext context) => ListTile(leading: Icon(icon), title: Text(title, style: Theme.of(context).textTheme.bodyLarge), subtitle: Text(subtitle, style: Theme.of(context).textTheme.bodySmall), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)));
+}
+
+class _Divider extends StatelessWidget {
+  const _Divider();
+  @override
+  Widget build(BuildContext context) => Divider(height: 1, indent: 56, color: Theme.of(context).dividerColor.withValues(alpha: 0.5));
 }

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'screens/chat/chat_screen.dart';
+import 'screens/dashboard/dashboard_screen.dart';
 import 'screens/home_screen.dart';
 import 'screens/file_picker_screen.dart';
 import 'screens/transfer_progress_screen.dart';
@@ -26,6 +27,12 @@ final appRouter = GoRouter(
           path: '/',
           pageBuilder: (context, state) => const NoTransitionPage(
             child: ChatScreen(),
+          ),
+        ),
+        GoRoute(
+          path: '/dashboard',
+          pageBuilder: (context, state) => const NoTransitionPage(
+            child: DashboardScreen(),
           ),
         ),
         GoRoute(
@@ -192,9 +199,9 @@ class ScaffoldWithNavBar extends StatelessWidget {
             label: 'AI 助手',
           ),
           NavigationDestination(
-            icon: Icon(Icons.devices_outlined),
-            selectedIcon: Icon(Icons.devices),
-            label: '设备',
+            icon: Icon(Icons.dashboard_outlined),
+            selectedIcon: Icon(Icons.dashboard),
+            label: '仪表盘',
           ),
           NavigationDestination(
             icon: Icon(Icons.apps_outlined),
@@ -213,22 +220,18 @@ class ScaffoldWithNavBar extends StatelessWidget {
 
   int _calculateSelectedIndex(BuildContext context) {
     final location = GoRouterState.of(context).uri.toString();
-    if (location.startsWith('/devices')) return 1;
-    if (location.startsWith('/tools')) return 2;
+    if (location.startsWith('/dashboard')) return 1;
+    if (location.startsWith('/tools') || location.startsWith('/devices')) return 2;
     if (location.startsWith('/settings')) return 3;
-    return 0; // Chat is default
+    return 0;
   }
 
   void _onItemTapped(int index, BuildContext context) {
     switch (index) {
-      case 0:
-        context.go('/');
-      case 1:
-        context.go('/devices');
-      case 2:
-        context.go('/tools');
-      case 3:
-        context.go('/settings');
+      case 0: context.go('/');
+      case 1: context.go('/dashboard');
+      case 2: context.go('/tools');
+      case 3: context.go('/settings');
     }
   }
 }
