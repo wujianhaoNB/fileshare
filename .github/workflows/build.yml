@@ -53,9 +53,11 @@ jobs:
           cd ios
           pod install --repo-update
 
-      - name: Fix Xcode project for unsigned build (Ruby xcodeproj)
+      - name: Let Flutter upgrade project (will fail on signing, but project is prepared)
+        run: flutter build ios --release --no-codesign || true
+
+      - name: Disable signing in upgraded project
         run: |
-          sudo gem install xcodeproj --no-document 2>/dev/null || true
           cd ios
           ruby -e "
           require 'xcodeproj'
@@ -71,18 +73,23 @@ jobs:
             end
           end
           project.save
-          puts 'Signing disabled via xcodeproj'
           "
 
-      - name: Verify project settings
+      - name: Build with xcodebuild directly
         run: |
           cd ios
-          grep -c 'CODE_SIGN_STYLE = Manual' Runner.xcodeproj/project.pbxproj && echo "Manual signing confirmed" || echo "WARNING: signing not set"
-          grep -c 'DEVELOPMENT_TEAM = ""' Runner.xcodeproj/project.pbxproj && echo "Empty team confirmed" || echo "Team entries:"
-          grep 'DEVELOPMENT_TEAM' Runner.xcodeproj/project.pbxproj | head -5
-
-      - name: Build iOS unsigned
-        run: flutter build ios --release --no-codesign
+          xcodebuild -workspace Runner.xcworkspace \
+            -scheme Runner \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO \
+            DEVELOPMENT_TEAM="" \
+            PROVISIONING_PROFILE_SPECIFIER="" \
+            ONLY_ACTIVE_ARCH=NO \
+            build
 
       - name: Package IPA
         run: |
