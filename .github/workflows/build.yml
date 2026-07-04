@@ -53,8 +53,37 @@ jobs:
           cd ios
           pod install --repo-update
 
-      - name: Build iOS (unsigned)
-        run: flutter build ios --release --no-codesign
+      - name: Fix Xcode project for unsigned build
+        run: |
+          cd ios
+          # Strip all signing settings from project
+          sed -i '' 's/DEVELOPMENT_TEAM = [A-Z0-9]*;/DEVELOPMENT_TEAM = "";/g' Runner.xcodeproj/project.pbxproj
+          sed -i '' 's/DEVELOPMENT_TEAM = "";/DEVELOPMENT_TEAM = "";/g' Runner.xcodeproj/project.pbxproj
+          sed -i '' 's/CODE_SIGN_STYLE = Automatic;/CODE_SIGN_STYLE = Manual;/g' Runner.xcodeproj/project.pbxproj
+          sed -i '' 's/PROVISIONING_PROFILE_SPECIFIER = "[^"]*";/PROVISIONING_PROFILE_SPECIFIER = "";/g' Runner.xcodeproj/project.pbxproj
+
+      - name: Build with Flutter first (prepare workspace)
+        run: flutter build ios --release --no-codesign || echo "Flutter build failed as expected, using xcodebuild directly"
+
+      - name: Build unsigned IPA with xcodebuild
+        run: |
+          cd ios
+          xcodebuild -workspace Runner.xcworkspace \
+            -scheme Runner \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO \
+            DEVELOPMENT_TEAM="" \
+            PROVISIONING_PROFILE_SPECIFIER="" \
+            -allowProvisioningUpdates NO \
+            -allowProvisioningDeviceRegistration NO \
+            build \
+            ONLY_ACTIVE_ARCH=NO \
+            ARCHS="arm64" \
+            VALID_ARCHS="arm64"
 
       - name: Package IPA
         run: |
