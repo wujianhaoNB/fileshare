@@ -53,11 +53,20 @@ jobs:
           cd ios
           pod install --repo-update
 
-      - name: Let Flutter upgrade project (will fail on signing, but project is prepared)
-        run: flutter build ios --release --no-codesign || true
-
-      - name: Disable signing in upgraded project
+      - name: Build iOS (accept Flutter signing failure — .app is produced anyway)
         run: |
+          flutter build ios --release --no-codesign || true
+          # The xcodebuild step succeeds (108s), only Flutter's post-check fails
+          # So the .app bundle should exist already
+          ls -la build/ios/Release-iphoneos/Runner.app 2>/dev/null && echo "APP EXISTS" || echo "APP MISSING"
+
+      - name: Fix and rebuild if needed
+        run: |
+          if [ -d "build/ios/Release-iphoneos/Runner.app" ]; then
+            echo "App already built by Flutter, skipping xcodebuild"
+            exit 0
+          fi
+          # Otherwise fix signing and build
           cd ios
           ruby -e "
           require 'xcodeproj'
@@ -74,22 +83,7 @@ jobs:
           end
           project.save
           "
-
-      - name: Build with xcodebuild directly
-        run: |
-          cd ios
-          xcodebuild -workspace Runner.xcworkspace \
-            -scheme Runner \
-            -configuration Release \
-            -sdk iphoneos \
-            -destination 'generic/platform=iOS' \
-            CODE_SIGN_IDENTITY="" \
-            CODE_SIGNING_REQUIRED=NO \
-            CODE_SIGNING_ALLOWED=NO \
-            DEVELOPMENT_TEAM="" \
-            PROVISIONING_PROFILE_SPECIFIER="" \
-            ONLY_ACTIVE_ARCH=NO \
-            build
+          xcodebuild -workspace Runner.xcworkspace -scheme Runner -configuration Release -sdk iphoneos -destination 'generic/platform=iOS' CODE_SIGN_IDENTITY="" CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=NO DEVELOPMENT_TEAM="" PROVISIONING_PROFILE_SPECIFIER="" ONLY_ACTIVE_ARCH=NO build
 
       - name: Package IPA
         run: |
